@@ -39,7 +39,7 @@ Phase 4 adds:
 - a bounded tool-call loop that returns MCP results to Ollama;
 - structured `ResourceRequest` interrupts for missing tools;
 - `Command(resume=...)` support using durable LangGraph thread IDs;
-- SQLite checkpoints under `data/checkpoints.sqlite`, preserved independently of Docker images.
+- SQLite checkpoints under `/app/data/checkpoints.sqlite` in the shared Docker volume, preserved independently of containers and images.
 
 Phase 5 adds:
 
@@ -51,7 +51,7 @@ Phase 5 adds:
 
 Phase 6 adds:
 
-- privacy-preserving JSONL telemetry under `data/traces.jsonl`;
+- privacy-preserving JSONL telemetry under `/app/data/traces.jsonl` in Docker;
 - timing across builder, runner, agent, MCP, and A2A boundaries;
 - active-branch measurements that make the concurrency dial observable;
 - automatic redaction of sensitive-looking metadata;
@@ -148,21 +148,21 @@ The zoo does not expose hidden model reasoning. Agents publish bounded, explicit
 
 A durable sequenced event ledger streams each real action to the browser: builder validation, Ollama crew design, agent creation, A2A dispatch, queue state, agent starts, MCP calls, observations, critiques, decisions, and completion. SSE sends new rows by cursor rather than repeatedly sending full snapshots.
 
-Agent Zoo state is persisted in `data/zoo.sqlite` separately from LangGraph checkpoints. Agent cards are clickable and open a detail drawer containing the role's mission prompt, tools, current status, event history, and sent/received messages. The browser also displays the active architecture boundary, live activity timeline, shared message board, resource controls, and final results while preserving the A2A and MCP service boundaries.
+Agent Zoo state is persisted at `/app/data/zoo.sqlite` in the shared named volume, separately from LangGraph checkpoints. Agent cards are clickable and open a detail drawer containing the role's mission prompt, tools, current status, event history, and sent/received messages. The browser also displays the active architecture boundary, live activity timeline, shared message board, resource controls, and final results while preserving the A2A and MCP service boundaries. The **Clear expedition history** button removes Zoo runs, cards, messages, and activity events after confirmation; it does not delete LangGraph checkpoints, generated artifacts, or `traces.jsonl`, and it refuses to run while an expedition is queued or running.
 
 ## Local observability
 
-Structured telemetry is appended to `data/traces.jsonl`, which survives container replacement through the existing bind mount. Events contain trace IDs, operation names, durations, statuses, tool names, roles, and concurrency counts. Prompt bodies, model responses, Ollama addresses, and credentials are not recorded.
+Structured telemetry is appended to `/app/data/traces.jsonl` in the `foundry-data` named volume, which survives container and image replacement. Events contain trace IDs, operation names, durations, statuses, tool names, roles, and concurrency counts. Prompt bodies, model responses, Ollama addresses, and credentials are not recorded.
 
 ```bash
-tail -f data/traces.jsonl
+make traces
 ```
 
 The local JSONL sink avoids requiring a cloud account or adding the database-heavy self-hosted Langfuse stack. It is intentionally isolated behind `src/telemetry.py` so a future backend can consume the same event boundary.
 
 ## Checkpoints and resource requests
 
-Each run receives a LangGraph thread ID and stores checkpoints in the bind-mounted `data/checkpoints.sqlite` database. If an agent requests a tool without a configured MCP server, the run prints a structured request and pauses. A committed demonstration config intentionally requests a missing `academic_search` server:
+Each run receives a LangGraph thread ID and stores checkpoints in `/app/data/checkpoints.sqlite` inside the shared `foundry-data` volume. If an agent requests a tool without a configured MCP server, the run prints a structured request and pauses. A committed demonstration config intentionally requests a missing `academic_search` server:
 
 ```bash
 docker compose run --rm foundry -m src \
@@ -179,7 +179,19 @@ docker compose run --rm foundry -m src \
   --resume retry
 ```
 
-To deliberately proceed without the missing tool, use `--resume continue_without_tool`; use `--resume cancel` to stop the run. Runner checkpoints remain single-writer SQLite. The low-volume Zoo event ledger is shared by the local services using rollback-journal mode and bounded lock waits because WAL is unreliable on Docker Desktop bind mounts. Postgres remains the appropriate upgrade for multiple runner replicas or heavier concurrent writes.
+To deliberately proceed without the missing tool, use `--resume continue_without_tool`; use `--resume cancel` to stop the run. Runner checkpoints remain single-writer SQLite. The low-volume Zoo event ledger is shared by the local services using rollback-journal mode and bounded lock waits. Postgres remains the appropriate upgrade for multiple runner replicas or heavier concurrent writes.
+
+## Docker volume lifecycle
+
+Compose mounts one named volume, `foundry-data`, at `/app/data` in the builder, runner, Zoo, and CLI services. It contains checkpoint state, Zoo history, traces, and generated artifacts without writing runtime history into the repository.
+
+```bash
+docker compose down              # stop containers; preserve Foundry state
+docker compose down -v           # destructive: delete the volume and all Foundry state
+docker compose up --build        # creates an empty volume when none exists
+```
+
+Use `docker compose down -v` only when you intentionally want a completely clean factory. The repository's ignored `data/` directory is used only by optional host-based Python runs and is not mounted by Compose. To copy runtime artifacts out before resetting, run `docker compose cp zoo:/app/data ./foundry-data-backup`.
 
 ## Docker operations
 
@@ -202,7 +214,7 @@ make docker-reset
 docker compose up
 ```
 
-`docker-reset` deliberately does not remove `data/`, so checkpoints and generated artifacts survive. It also does not delete unrelated Docker images. Files intended as shareable examples should be copied from `data/` to a tracked project directory on the appropriate Git branch.
+`docker-reset` deliberately preserves the `foundry-data` volume, so checkpoints and generated artifacts survive an image rebuild. It also does not delete unrelated Docker images. Copy artifacts out of the volume before moving selected examples into a tracked project directory or another Git branch.
 
 ## Project layout
 
@@ -216,7 +228,7 @@ src/resource_requests/  Human-in-the-loop resource requests
 src/zoo/                Dashboard, event ledger, SSE, and collaboration storage
 infra/remote-ollama/    Remote model-host guidance
 docs/                   Community-facing write-up
-data/                   Local persistent runtime state (gitignored)
+data/                   Optional host-run state only (gitignored; not mounted by Compose)
 ```
 
 ## Models

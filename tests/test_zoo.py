@@ -98,3 +98,11 @@ def test_dashboard_and_run_api(tmp_path: Path, monkeypatch) -> None:
     assert response.status_code == 202
     thread_id = response.json()["thread_id"]
     assert client.get(f"/api/runs/{thread_id}").json()["status"] == "queued"
+    assert client.delete("/api/runs?confirm=true").status_code == 409
+
+    zoo_app.store.set_run_status(thread_id, "completed")
+    cleared = client.delete("/api/runs?confirm=true")
+
+    assert cleared.status_code == 200
+    assert cleared.json()["deleted"]["runs"] == 1
+    assert client.get("/api/runs").json() == []

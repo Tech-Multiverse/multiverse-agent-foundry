@@ -207,6 +207,25 @@ class ZooStore:
                 tuple(message.model_dump().values()),
             )
 
+    def has_active_runs(self) -> bool:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT EXISTS(SELECT 1 FROM runs WHERE status IN ('queued', 'running')) AS active"
+            ).fetchone()
+        return bool(row["active"])
+
+    def clear_history(self) -> dict[str, int]:
+        with self._connect() as connection:
+            counts = {
+                table: connection.execute(f"SELECT COUNT(*) AS count FROM {table}").fetchone()["count"]
+                for table in ("runs", "agents", "messages", "events")
+            }
+            connection.execute("DELETE FROM agents")
+            connection.execute("DELETE FROM messages")
+            connection.execute("DELETE FROM events")
+            connection.execute("DELETE FROM runs")
+        return counts
+
     def list_runs(self, limit: int = 20) -> list[dict[str, Any]]:
         with self._connect() as connection:
             rows = connection.execute(

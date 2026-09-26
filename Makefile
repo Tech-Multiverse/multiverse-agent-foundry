@@ -19,7 +19,7 @@ a2a-submit:
 	python -m src.a2a --config configs/example-tasks/research.yaml
 
 traces:
-	tail -f data/traces.jsonl
+	docker compose exec zoo tail -f /app/data/traces.jsonl
 
 zoo:
 	@echo http://localhost:8080

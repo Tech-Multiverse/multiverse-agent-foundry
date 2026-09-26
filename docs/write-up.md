@@ -92,9 +92,9 @@ The honest scaling story is:
 
 ### Phase 4: tools are protocol boundaries
 
-Calculator, Wikipedia search, and sandboxed file writing run as separate MCP servers. Agents receive only tools on their validated allowlist. The calculator evaluates a restricted arithmetic AST rather than executing code, and file writes are confined to approved extensions under the bind-mounted `data/` directory.
+Calculator, Wikipedia search, and sandboxed file writing run as separate MCP servers. Agents receive only tools on their validated allowlist. The calculator evaluates a restricted arithmetic AST rather than executing code, and file writes are confined to approved extensions under `/app/data` in the shared `foundry-data` Docker volume.
 
-When a required tool has no MCP server, the graph emits a structured `ResourceRequest` with LangGraph `interrupt()`. SQLite stores the thread under `data/checkpoints.sqlite`. A later process resumes that exact thread with `Command(resume=...)`.
+When a required tool has no MCP server, the graph emits a structured `ResourceRequest` with LangGraph `interrupt()`. SQLite stores the thread under `/app/data/checkpoints.sqlite` in the named volume. A later process resumes that exact thread with `Command(resume=...)`.
 
 Available decisions are `retry`, `continue_without_tool`, and `cancel`. The committed `resource-request.yaml` task demonstrates the pause/resume flow without pretending that a missing capability exists.
 
@@ -106,7 +106,7 @@ This is more ceremony than an in-process call, but it creates a real deployment 
 
 ### Phase 6: useful observability without sending prompts elsewhere
 
-The primary observability backend is local JSONL at `data/traces.jsonl`. Events cover:
+The primary observability backend is local JSONL at `/app/data/traces.jsonl` in Docker. Events cover:
 
 - host-to-builder and builder-to-runner A2A requests;
 - builder generation duration;
@@ -121,18 +121,18 @@ Prompts, model responses, private endpoints, and credentials are intentionally e
 Inspect recent events with:
 
 ```bash
-python -c 'import json; from pathlib import Path; [print(json.dumps(json.loads(x), indent=2)) for x in Path("data/traces.jsonl").read_text().splitlines()[-10:]]'
+make traces
 ```
 
 ### Phase 7: turn observability into an Agent Zoo
 
 The browser dashboard at `http://localhost:8080` turns the protocol graph into a visual workspace. Users submit a topic, agent limit, and tool selection; the dashboard sends the task to the builder over A2A and receives live status through Server-Sent Events. No Node toolchain or frontend build is required.
 
-The zoo adds a durable collaboration and event ledger in `data/zoo.sqlite`. It uses SQLite's rollback journal with bounded lock waits; WAL is intentionally avoided because a WAL sidecar shared across Docker Desktop macOS bind mounts produced `disk I/O error` failures. Agents post a public plan before work, publish an observation afterward, critique one peer, and appoint the final agent as spokesperson for a team decision. These are explicit communication artifacts, not hidden chain-of-thought. Message content is capped at 2,000 characters and rounds are schema-bounded to prevent loops.
+The zoo adds a durable collaboration and event ledger at `/app/data/zoo.sqlite` in the named volume. It uses SQLite's rollback journal with bounded lock waits, keeping the local multi-process demo simple and avoiding host bind-mount filesystem quirks. Agents post a public plan before work, publish an observation afterward, critique one peer, and appoint the final agent as spokesperson for a team decision. These are explicit communication artifacts, not hidden chain-of-thought. Message content is capped at 2,000 characters and rounds are schema-bounded to prevent loops.
 
 Every meaningful transition is written as a sequenced event: task queueing, builder validation, Ollama crew design, agent creation, A2A dispatch, runner receipt, inference-slot waiting, agent work, MCP calls, board posts, critiques, decisions, and completion. Cursor-based SSE delivers events individually, making long serialized waits understandable rather than visually silent.
 
-The UI presents an animated architecture path, live activity timeline, clickable agent cards, tool allowlists, current status, a chat-style message board, resource controls, and final structured output. An agent detail drawer shows its mission prompt, activity history, and sent or received messages. The dashboard remains a view over the existing architecture rather than a shortcut around it: task submission still enters through builder A2A, execution remains in the runner, and tools remain MCP-only.
+The UI presents an animated architecture path, live activity timeline, clickable agent cards, tool allowlists, current status, a chat-style message board, resource controls, and final structured output. An agent detail drawer shows its mission prompt, activity history, and sent or received messages. A confirmed clear-history control removes only the Zoo's presentation history and refuses deletion during queued or running work; checkpoints, generated files, and telemetry remain intact. The dashboard remains a view over the existing architecture rather than a shortcut around it: task submission still enters through builder A2A, execution remains in the runner, and tools remain MCP-only.
 
 ## Running the demonstration
 
@@ -141,6 +141,8 @@ cp .env.example .env
 # Set the private Ollama URL in .env.
 docker compose up --build
 ```
+
+Compose keeps runtime state in the shared `foundry-data` named volume. Rebuilding images or containers preserves it; `docker compose down -v` intentionally deletes the volume for a completely clean factory. Copy `/app/data` out of the Zoo container before using that destructive reset when examples need to be retained.
 
 Open `http://localhost:8080` for the visual Agent Zoo. For protocol-level verification, use another terminal:
 
@@ -155,7 +157,7 @@ The expected path is Agent Zoo → builder A2A → runner A2A → LangGraph plan
 
 ## Security and trust boundaries
 
-- `.env` and `data/` are ignored by Git and excluded from the Docker build context.
+- `.env` and optional host-run `data/` are ignored by Git and excluded from the Docker build context; Compose runtime state lives in a named volume.
 - Model output is Pydantic-validated before it controls graph construction.
 - Tool visibility is deny-by-default through each agent's allowlist.
 - File writes cannot escape the configured data directory.

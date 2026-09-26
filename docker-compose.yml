@@ -13,6 +13,8 @@ x-foundry-service: &foundry-service
     - path: .env
       required: false
   environment: *foundry-environment
+  volumes:
+    - foundry-data:/app/data
 
 services:
   builder:
@@ -26,8 +28,6 @@ services:
       - runner
     ports:
       - "127.0.0.1:8001:8001"
-    volumes:
-      - ./data:/app/data
 
   runner:
     <<: *foundry-service
@@ -37,8 +37,6 @@ services:
       RUNNER_A2A_PUBLIC_URL: http://runner:8002
     ports:
       - "127.0.0.1:8002:8002"
-    volumes:
-      - ./data:/app/data
 
   zoo:
     <<: *foundry-service
@@ -52,11 +50,10 @@ services:
       - runner
     ports:
       - "127.0.0.1:8080:8080"
-    volumes:
-      - ./data:/app/data
 
   foundry:
     <<: *foundry-service
     profiles: ["cli"]
-    volumes:
-      - ./data:/app/data
+
+volumes:
+  foundry-data:
