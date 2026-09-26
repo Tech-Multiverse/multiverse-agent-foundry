@@ -1,0 +1,62 @@
+x-foundry-environment: &foundry-environment
+  OLLAMA_HOST: ${OLLAMA_HOST:?Set OLLAMA_HOST in .env}
+  OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:8b}
+  OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-nomic-embed-text:latest}
+  MAX_CONCURRENCY: ${MAX_CONCURRENCY:-1}
+  FOUNDRY_DATA_DIR: /app/data
+
+x-foundry-service: &foundry-service
+  image: multiverse-foundry:local
+  build:
+    context: .
+  env_file:
+    - path: .env
+      required: false
+  environment: *foundry-environment
+
+services:
+  builder:
+    <<: *foundry-service
+    command: ["-m", "uvicorn", "src.a2a.builder_server:app", "--host", "0.0.0.0", "--port", "8001"]
+    environment:
+      <<: *foundry-environment
+      RUNNER_A2A_URL: http://runner:8002
+      BUILDER_A2A_PUBLIC_URL: http://localhost:8001
+    depends_on:
+      - runner
+    ports:
+      - "127.0.0.1:8001:8001"
+    volumes:
+      - ./data:/app/data
+
+  runner:
+    <<: *foundry-service
+    command: ["-m", "uvicorn", "src.a2a.runner_server:app", "--host", "0.0.0.0", "--port", "8002"]
+    environment:
+      <<: *foundry-environment
+      RUNNER_A2A_PUBLIC_URL: http://runner:8002
+    ports:
+      - "127.0.0.1:8002:8002"
+    volumes:
+      - ./data:/app/data
+
+  zoo:
+    <<: *foundry-service
+    command: ["-m", "uvicorn", "src.zoo.app:app", "--host", "0.0.0.0", "--port", "8080"]
+    environment:
+      <<: *foundry-environment
+      BUILDER_A2A_URL: http://builder:8001
+      RUNNER_A2A_URL: http://runner:8002
+    depends_on:
+      - builder
+      - runner
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./data:/app/data
+
+  foundry:
+    <<: *foundry-service
+    profiles: ["cli"]
+    volumes:
+      - ./data:/app/data

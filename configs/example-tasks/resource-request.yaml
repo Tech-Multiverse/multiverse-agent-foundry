@@ -1,0 +1,17 @@
+task_type: research
+task_input:
+  topic: Demonstrate how a missing specialist research tool pauses an agent workflow
+  goal: Request the unavailable academic_search capability
+allowed_tools:
+  - academic_search
+required_tools:
+  - academic_search
+max_agents: 1
+response_schema:
+  type: object
+  properties:
+    summary:
+      type: string
+  required:
+    - summary
+  additionalProperties: false

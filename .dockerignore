@@ -1,0 +1,11 @@
+.env
+.git
+.gitignore
+__pycache__/
+.pytest_cache/
+*.egg-info/
+data/
+tests/
+docs/
+infra/
+multiverse-foundry-project-brief.md

@@ -1,0 +1,24 @@
+task_type: research
+task_input:
+  topic: How serialized multi-agent systems make local AI practical on an 8GB GPU
+  audience: Developers learning local multi-agent orchestration
+  goal: Explain the trade-offs clearly and support the findings with sources
+allowed_tools:
+  - web_search
+  - file_write
+required_tools:
+  - web_search
+max_agents: 3
+response_schema:
+  type: object
+  properties:
+    summary:
+      type: string
+    sources:
+      type: array
+      items:
+        type: string
+  required:
+    - summary
+    - sources
+  additionalProperties: false

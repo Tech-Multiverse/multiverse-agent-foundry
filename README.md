@@ -1,0 +1,226 @@
+# Multiverse Foundry
+
+**Serialized on 8GB, engineered for a swarm.**
+
+Multiverse Foundry is a configurable agent factory. A validated task definition will be passed to a builder agent, which designs a task-specific crew and runs it through a parallel-shaped LangGraph workflow. The initial runtime targets a remote Ollama host and serial execution; later phases add MCP tools, A2A messaging, checkpointing, and observability.
+
+## Implemented phases
+
+Phase 0 provides the repository skeleton, strict Pydantic task validation, schema-agnostic response definitions, Docker and Conda workflows, and persistent local storage.
+
+Phase 1 adds:
+
+- environment-backed Ollama host and model settings;
+- a remote Ollama client using `langchain-ollama`;
+- a minimal `START → call_model → END` LangGraph workflow;
+- CLI health checks and model invocation;
+- mocked graph tests plus a verified live round trip through Docker Compose.
+
+Phase 2 adds:
+
+- a Pydantic-validated `AgentSpec` schema for role, system prompt, tool allowlist, and handoff order;
+- a builder LangGraph node that converts a task config into a crew;
+- JSON Schema-constrained Ollama output with explicit parsing and validation;
+- retries that return validation feedback to the model;
+- cross-field safeguards for unique roles, consecutive handoffs, agent limits, and tool allowlists.
+
+Phase 3 adds:
+
+- a `Send`-based fan-out graph that maps each generated specification to an agent branch;
+- reducer-backed fan-in and deterministic result ordering;
+- a `MAX_CONCURRENCY` semaphore that defaults to serialized model calls;
+- schema-agnostic `task_input` data so task configs carry an actual subject and context;
+- an end-to-end entry point that builds the crew, executes every branch, and prints both specifications and results.
+
+Phase 4 adds:
+
+- separate stdio MCP servers for Wikipedia search, sandboxed file writes, and arithmetic;
+- per-agent tool binding restricted by each generated allowlist;
+- a bounded tool-call loop that returns MCP results to Ollama;
+- structured `ResourceRequest` interrupts for missing tools;
+- `Command(resume=...)` support using durable LangGraph thread IDs;
+- SQLite checkpoints under `data/checkpoints.sqlite`, preserved independently of Docker images.
+
+Phase 5 adds:
+
+- separate long-running builder and runner A2A services;
+- A2A 1.0 JSON-RPC agent cards and task messaging;
+- builder-to-runner discovery and dispatch over the Compose network;
+- host ports `8001` and `8002` for card inspection and integration;
+- an A2A client CLI for submitting task configs.
+
+Phase 6 adds:
+
+- privacy-preserving JSONL telemetry under `data/traces.jsonl`;
+- timing across builder, runner, agent, MCP, and A2A boundaries;
+- active-branch measurements that make the concurrency dial observable;
+- automatic redaction of sensitive-looking metadata;
+- a community-facing architecture narrative and demo outline.
+
+Phase 7 — Agent Zoo adds:
+
+- a FastAPI browser dashboard at `http://localhost:8080`;
+- task submission through the builder's A2A interface;
+- live SSE updates without a frontend build pipeline;
+- persistent agent cards, run status, results, and a shared message board;
+- one bounded public critique round between agents;
+- explicit public rationale rather than hidden chain-of-thought.
+
+## Quick start with Docker Compose
+
+Docker Compose is the recommended way to build and run Multiverse Foundry. It keeps the runtime isolated and closely matches how the project will be deployed. Conda is not required for this workflow.
+
+```bash
+cp .env.example .env
+```
+
+Set `OLLAMA_HOST` in `.env` to your private Ollama URL. Do not put a private network address in tracked files. Then build and start the builder and runner A2A services:
+
+```bash
+docker compose up --build
+```
+
+The services remain running. Open the Agent Zoo dashboard:
+
+```text
+http://localhost:8080
+```
+
+The dashboard submits tasks over A2A and updates live through SSE. You can also inspect the builder card or submit from the CLI:
+
+```bash
+curl http://localhost:8001/.well-known/agent-card.json
+conda run -n multiverse-foundry python -m src.a2a \
+  --config configs/example-tasks/research.yaml
+```
+
+For subsequent starts, when neither dependencies nor the Dockerfile have changed, use `docker compose up`. The builder designs the crew and dispatches it to the runner over A2A; the runner executes independent branches and exposes only each branch's allowlisted MCP tools. Search currently uses Wikipedia's OpenSearch API, so claims not supported by returned MCP results must still be treated as unverified.
+
+## Optional local development with Conda
+
+Use Conda only when you want to run tests, debug Python directly, or use host-based IDE tooling without rebuilding an image. These commands are an alternative development workflow, not prerequisites for Docker Compose.
+
+```bash
+conda env create -f environment.yml
+conda activate multiverse-foundry
+python -m src.graph --check
+python -m src.builder --config configs/example-tasks/research.yaml
+python -m src.builder --config configs/example-tasks/research.yaml --validate-only
+python -m pytest
+```
+
+After changing Python dependencies, update the existing environment with:
+
+```bash
+conda env update -f environment.yml --prune
+```
+
+## Configuration
+
+Copy `.env.example` to `.env`. The defaults are:
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `OLLAMA_HOST` | Remote Ollama API base URL; must be set in `.env` | No usable default |
+| `OLLAMA_MODEL` | Generation model | `qwen3:8b` |
+| `OLLAMA_EMBED_MODEL` | Embedding model | `nomic-embed-text:latest` |
+| `MAX_CONCURRENCY` | Maximum simultaneous agent branches | `1` |
+| `FOUNDRY_DATA_DIR` | Persistent runtime data location in Docker | `/app/data` |
+
+The runtime consumes `OLLAMA_HOST`, `OLLAMA_MODEL`, `MAX_CONCURRENCY`, and `FOUNDRY_DATA_DIR`. The embedding model setting is reserved for a later phase.
+
+Task files accept `task_type`, schema-agnostic `task_input`, `allowed_tools`, `required_tools`, `max_agents`, and an optional `response_schema`. Required tools must also be allowed and must be assigned to at least one generated agent. The input mapping carries the subject and context without hardcoding fields for each task type. The response definition is a JSON Schema supplied with each request, allowing later agents to produce task-specific structures without hardcoding one application schema.
+
+## Concurrency dial
+
+The graph always has parallel-shaped `Send` branches, but `MAX_CONCURRENCY=1` allows only one model request at a time. This is the recommended setting for the current 8GB GPU host. On hardware that can safely serve simultaneous requests, test the same graph with:
+
+```bash
+MAX_CONCURRENCY=2 docker compose up
+```
+
+Only the semaphore limit changes; the graph topology does not. Unit tests verify both a peak concurrency of one and a peak concurrency of two. Higher concurrency against a single memory-constrained Ollama host may reduce performance or exhaust GPU memory.
+
+## Agent Zoo collaboration
+
+The zoo does not expose hidden model reasoning. Agents publish bounded, explicit messages intended for other agents and human viewers. They first post public work plans, then observations, one peer critique each, and one final team decision. Message length and round count are schema-bounded to prevent uncontrolled conversation loops.
+
+A durable sequenced event ledger streams each real action to the browser: builder validation, Ollama crew design, agent creation, A2A dispatch, queue state, agent starts, MCP calls, observations, critiques, decisions, and completion. SSE sends new rows by cursor rather than repeatedly sending full snapshots.
+
+Agent Zoo state is persisted in `data/zoo.sqlite` separately from LangGraph checkpoints. Agent cards are clickable and open a detail drawer containing the role's mission prompt, tools, current status, event history, and sent/received messages. The browser also displays the active architecture boundary, live activity timeline, shared message board, resource controls, and final results while preserving the A2A and MCP service boundaries.
+
+## Local observability
+
+Structured telemetry is appended to `data/traces.jsonl`, which survives container replacement through the existing bind mount. Events contain trace IDs, operation names, durations, statuses, tool names, roles, and concurrency counts. Prompt bodies, model responses, Ollama addresses, and credentials are not recorded.
+
+```bash
+tail -f data/traces.jsonl
+```
+
+The local JSONL sink avoids requiring a cloud account or adding the database-heavy self-hosted Langfuse stack. It is intentionally isolated behind `src/telemetry.py` so a future backend can consume the same event boundary.
+
+## Checkpoints and resource requests
+
+Each run receives a LangGraph thread ID and stores checkpoints in the bind-mounted `data/checkpoints.sqlite` database. If an agent requests a tool without a configured MCP server, the run prints a structured request and pauses. A committed demonstration config intentionally requests a missing `academic_search` server:
+
+```bash
+docker compose run --rm foundry -m src \
+  --config configs/example-tasks/resource-request.yaml \
+  --thread-id resource-demo
+```
+
+Keep the reported thread ID, add the server if appropriate, rebuild the image, and resume with:
+
+```bash
+docker compose run --rm foundry -m src \
+  --config configs/example-tasks/research.yaml \
+  --thread-id THREAD_ID \
+  --resume retry
+```
+
+To deliberately proceed without the missing tool, use `--resume continue_without_tool`; use `--resume cancel` to stop the run. SQLite is sufficient while this is a single application service. An optional Postgres Compose profile remains a later stretch goal for shared state across A2A services.
+
+## Docker operations
+
+`docker compose up` is the normal project entry point. You do not also need to activate Conda, invoke the Python module, or use `docker compose run`.
+
+Use one-off containers for diagnostics, config-only validation, or a different task file:
+
+```bash
+docker compose run --rm foundry -m src.graph --check
+docker compose run --rm foundry -m src.builder --config configs/example-tasks/research.yaml --validate-only
+docker compose run --rm foundry -m src.builder --config configs/example-tasks/research.yaml
+```
+
+The Docker entrypoint is `python`, so everything after the service name is a Python argument. These commands create a temporary container instead of starting the normal Compose application, making them useful for scripts and CI.
+
+To remove only this project's Compose containers and locally built image, then force a clean image rebuild:
+
+```bash
+make docker-reset
+docker compose up
+```
+
+`docker-reset` deliberately does not remove `data/`, so checkpoints and generated artifacts survive. It also does not delete unrelated Docker images. Files intended as shareable examples should be copied from `data/` to a tracked project directory on the appropriate Git branch.
+
+## Project layout
+
+```text
+configs/example-tasks/  Versioned task examples
+src/builder/            Builder graph, schemas, validation, and CLI
+src/graph/              LangGraph orchestration
+src/tools/              MCP tool servers
+src/a2a/                A2A adapters and servers
+src/resource_requests/  Human-in-the-loop resource requests
+infra/remote-ollama/    Remote model-host guidance
+docs/                   Community-facing write-up
+data/                   Local persistent runtime state (gitignored)
+```
+
+## Models
+
+The available models are enough to continue. `qwen3:8b` is the initial general-purpose default and has produced valid Phase 2 crews using JSON Schema-constrained output. `llama3-groq-tool-use:8b` remains a useful tool-calling comparison, `llama3.1:8b` provides a baseline, and `nomic-embed-text:latest` covers embeddings. No additional model is currently required.
+
+## Roadmap
+
+See [the project brief](multiverse-foundry-project-brief.md) for the phased implementation plan.
