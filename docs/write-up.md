@@ -11,8 +11,12 @@ The project is both a working local-first agent factory and a teaching artifact 
 ## System map
 
 ```text
-Task YAML/JSON
+Browser Agent Zoo :8080
+  - task form + clickable agent cards
+  - cursor-based SSE activity feed
+  - persistent message board
       |
+      | A2A task
       v
 Builder A2A service :8001
   - validates TaskConfig
@@ -124,7 +128,7 @@ python -c 'import json; from pathlib import Path; [print(json.dumps(json.loads(x
 
 The browser dashboard at `http://localhost:8080` turns the protocol graph into a visual workspace. Users submit a topic, agent limit, and tool selection; the dashboard sends the task to the builder over A2A and receives live status through Server-Sent Events. No Node toolchain or frontend build is required.
 
-The zoo adds a durable collaboration and event ledger in `data/zoo.sqlite`. Agents post a public plan before work, publish an observation afterward, critique one peer, and appoint the final agent as spokesperson for a team decision. These are explicit communication artifacts, not hidden chain-of-thought. Message content is capped at 2,000 characters and rounds are schema-bounded to prevent loops.
+The zoo adds a durable collaboration and event ledger in `data/zoo.sqlite`. It uses SQLite's rollback journal with bounded lock waits; WAL is intentionally avoided because a WAL sidecar shared across Docker Desktop macOS bind mounts produced `disk I/O error` failures. Agents post a public plan before work, publish an observation afterward, critique one peer, and appoint the final agent as spokesperson for a team decision. These are explicit communication artifacts, not hidden chain-of-thought. Message content is capped at 2,000 characters and rounds are schema-bounded to prevent loops.
 
 Every meaningful transition is written as a sequenced event: task queueing, builder validation, Ollama crew design, agent creation, A2A dispatch, runner receipt, inference-slot waiting, agent work, MCP calls, board posts, critiques, decisions, and completion. Cursor-based SSE delivers events individually, making long serialized waits understandable rather than visually silent.
 
@@ -147,7 +151,7 @@ conda run -n multiverse-foundry python -m src.a2a \
   --config configs/example-tasks/research.yaml
 ```
 
-The expected path is host client → builder A2A → runner A2A → LangGraph branches → MCP/Ollama → ordered response.
+The expected path is Agent Zoo → builder A2A → runner A2A → LangGraph planning and agent branches → MCP/Ollama → critique and decision board → live SSE updates and structured response.
 
 ## Security and trust boundaries
 
@@ -170,13 +174,14 @@ This remains an educational system, not a hardened multi-tenant platform. The A2
 4. Follow one MCP tool call across the process boundary.
 5. Trigger `resource-request.yaml`, stop the container, and resume the SQLite thread.
 6. `curl` both A2A cards and submit a task through the builder.
-7. Tail `data/traces.jsonl` while a run executes.
-8. Close with what changes—and what does not—when more GPU capacity arrives.
+7. Launch an expedition in the Agent Zoo and watch the activity feed, active protocol boundary, agent plans, MCP calls, critiques, and final decision arrive live.
+8. Click an agent card to inspect its mission, tools, event history, and sent or received messages.
+9. Close with what changes—and what does not—when more GPU capacity arrives.
 
 ## Next experiments
 
 - Optional Postgres checkpoints when several A2A runner replicas need shared state.
-- A richer graph visualization and playback timeline in the Agent Zoo.
+- Historical event replay controls, filtering, and a richer node-edge graph in the Agent Zoo.
 - Multiple Ollama endpoints for a genuine distributed concurrency demonstration.
 - Stronger citation verification and result synthesis after branch fan-in.
 - Authentication and authorization on A2A and MCP transports.

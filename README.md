@@ -2,7 +2,7 @@
 
 **Serialized on 8GB, engineered for a swarm.**
 
-Multiverse Foundry is a configurable agent factory. A validated task definition will be passed to a builder agent, which designs a task-specific crew and runs it through a parallel-shaped LangGraph workflow. The initial runtime targets a remote Ollama host and serial execution; later phases add MCP tools, A2A messaging, checkpointing, and observability.
+Multiverse Foundry is a configurable agent factory and visual Agent Zoo. A validated task passes through an A2A builder service, which designs a task-specific crew for a parallel-shaped LangGraph runner. Agents use allowlisted MCP tools, exchange bounded public messages, persist checkpoints and activity locally, and stream live status to the browser while remote Ollama inference remains serialized by default for an 8GB GPU.
 
 ## Implemented phases
 
@@ -63,7 +63,8 @@ Phase 7 — Agent Zoo adds:
 - task submission through the builder's A2A interface;
 - live SSE updates without a frontend build pipeline;
 - persistent agent cards, run status, results, and a shared message board;
-- one bounded public critique round between agents;
+- bounded public planning, observation, peer-critique, and team-decision rounds;
+- a sequenced live activity feed, active architecture path, and clickable agent detail drawer;
 - explicit public rationale rather than hidden chain-of-thought.
 
 ## Quick start with Docker Compose
@@ -125,7 +126,7 @@ Copy `.env.example` to `.env`. The defaults are:
 | `OLLAMA_MODEL` | Generation model | `qwen3:8b` |
 | `OLLAMA_EMBED_MODEL` | Embedding model | `nomic-embed-text:latest` |
 | `MAX_CONCURRENCY` | Maximum simultaneous agent branches | `1` |
-| `FOUNDRY_DATA_DIR` | Persistent runtime data location in Docker | `/app/data` |
+| `FOUNDRY_DATA_DIR` | Persistent runtime data location | `data` locally; Compose overrides to `/app/data` |
 
 The runtime consumes `OLLAMA_HOST`, `OLLAMA_MODEL`, `MAX_CONCURRENCY`, and `FOUNDRY_DATA_DIR`. The embedding model setting is reserved for a later phase.
 
@@ -173,12 +174,12 @@ Keep the reported thread ID, add the server if appropriate, rebuild the image, a
 
 ```bash
 docker compose run --rm foundry -m src \
-  --config configs/example-tasks/research.yaml \
+  --config configs/example-tasks/resource-request.yaml \
   --thread-id THREAD_ID \
   --resume retry
 ```
 
-To deliberately proceed without the missing tool, use `--resume continue_without_tool`; use `--resume cancel` to stop the run. SQLite is sufficient while this is a single application service. An optional Postgres Compose profile remains a later stretch goal for shared state across A2A services.
+To deliberately proceed without the missing tool, use `--resume continue_without_tool`; use `--resume cancel` to stop the run. Runner checkpoints remain single-writer SQLite. The low-volume Zoo event ledger is shared by the local services using rollback-journal mode and bounded lock waits because WAL is unreliable on Docker Desktop bind mounts. Postgres remains the appropriate upgrade for multiple runner replicas or heavier concurrent writes.
 
 ## Docker operations
 
@@ -212,6 +213,7 @@ src/graph/              LangGraph orchestration
 src/tools/              MCP tool servers
 src/a2a/                A2A adapters and servers
 src/resource_requests/  Human-in-the-loop resource requests
+src/zoo/                Dashboard, event ledger, SSE, and collaboration storage
 infra/remote-ollama/    Remote model-host guidance
 docs/                   Community-facing write-up
 data/                   Local persistent runtime state (gitignored)
