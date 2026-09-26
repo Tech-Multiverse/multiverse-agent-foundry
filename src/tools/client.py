@@ -17,7 +17,7 @@ _CONNECTIONS: dict[str, dict[str, Any]] = {
         "transport": "stdio",
         "command": sys.executable,
         "args": ["-m", "src.tools.file_write_server"],
-        "env": {"FOUNDRY_DATA_DIR": os.environ.get("FOUNDRY_DATA_DIR", "data")},
+        "env": {"FOUNDRY_ARTIFACT_DIR": os.environ.get("FOUNDRY_ARTIFACT_DIR", "artifacts")}, 
     },
     "web_search": {
         "transport": "stdio",

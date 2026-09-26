@@ -71,6 +71,7 @@ async def invoke_agent_with_mcp_tools(
     allowed_tool_names: list[str],
     trace_id: str,
     thread_id: str,
+    actor: str,
     event_store: ZooStore | None = None,
 ) -> BaseMessage:
     if not allowed_tool_names:
@@ -78,7 +79,7 @@ async def invoke_agent_with_mcp_tools(
     loaded_tools = await load_mcp_tools()
     selected_tools = [tool for tool in loaded_tools if tool.name in allowed_tool_names]
     return await invoke_agent_with_tools(
-        model, messages, selected_tools, trace_id, thread_id, event_store=event_store
+        model, messages, selected_tools, trace_id, thread_id, actor, event_store=event_store
     )
 
 
@@ -88,6 +89,7 @@ async def invoke_agent_with_tools(
     tools: list[BaseTool],
     trace_id: str,
     thread_id: str,
+    actor: str,
     event_store: ZooStore | None = None,
     max_rounds: int = 5,
 ) -> BaseMessage:
@@ -114,6 +116,17 @@ async def invoke_agent_with_tools(
                 event_store.add_event(
                     thread_id, trace_id, "mcp.tool.completed", tool.name, f"{tool.name} completed", "MCP"
                 )
+                if tool.name == "file_write" and isinstance(tool_call["args"].get("filename"), str):
+                    filename = tool_call["args"]["filename"]
+                    event_store.add_event(
+                        thread_id,
+                        trace_id,
+                        "artifact.created",
+                        actor,
+                        f"Created {filename}",
+                        filename,
+                        {"filename": filename},
+                    )
             content = result if isinstance(result, str) else json.dumps(result, default=str)
             conversation.append(ToolMessage(content=content, tool_call_id=tool_call["id"]))
     raise RuntimeError(f"Agent exceeded the {max_rounds}-round tool-call limit")
@@ -270,6 +283,7 @@ def build_task_runner_graph(
                                 agent.tool_allowlist,
                                 state["trace_id"],
                                 state["thread_id"],
+                                agent.role,
                                 event_store=collaboration_store,
                             )
                         )
@@ -282,6 +296,7 @@ def build_task_runner_graph(
                                 selected_tools,
                                 state["trace_id"],
                                 state["thread_id"],
+                                agent.role,
                                 event_store=collaboration_store,
                             )
                         )

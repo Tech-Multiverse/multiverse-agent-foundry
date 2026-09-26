@@ -9,3 +9,5 @@ dist/
 .DS_Store
 data/*
 !data/.gitkeep
+artifacts/*
+!artifacts/.gitkeep

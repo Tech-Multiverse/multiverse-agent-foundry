@@ -8,8 +8,8 @@ mcp = FastMCP("multiverse-file-write")
 _ALLOWED_SUFFIXES = {".json", ".md", ".txt"}
 
 
-def write_data_file(filename: str, content: str, data_dir: str | Path | None = None) -> str:
-    root = Path(data_dir or os.environ.get("FOUNDRY_DATA_DIR", "data")).resolve()
+def write_data_file(filename: str, content: str, artifact_dir: str | Path | None = None) -> str:
+    root = Path(artifact_dir or os.environ.get("FOUNDRY_ARTIFACT_DIR", "artifacts")).resolve()
     root.mkdir(parents=True, exist_ok=True)
     if Path(filename).name != filename:
         raise ValueError("filename must not contain a directory path")
@@ -24,7 +24,7 @@ def write_data_file(filename: str, content: str, data_dir: str | Path | None = N
 
 @mcp.tool(name="file_write")
 def file_write(filename: str, content: str) -> str:
-    """Write UTF-8 content to a safe file under the Foundry data directory."""
+    """Write UTF-8 content to a safe file under the Foundry artifact directory."""
     return write_data_file(filename, content)
 
 

@@ -195,6 +195,22 @@ class ZooStore:
             for row in rows
         ]
 
+    def get_artifact_event(self, filename: str) -> dict[str, Any] | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT thread_id, trace_id, actor, summary, metadata_json, created_at
+                FROM events
+                WHERE event_type = 'artifact.created' AND target = ?
+                ORDER BY sequence DESC
+                LIMIT 1
+                """,
+                (filename,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {**dict(row), "metadata": json.loads(row["metadata_json"])}
+
     def latest_event_sequence(self) -> int:
         with self._connect() as connection:
             row = connection.execute("SELECT COALESCE(MAX(sequence), 0) AS sequence FROM events").fetchone()

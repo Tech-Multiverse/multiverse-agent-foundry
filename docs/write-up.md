@@ -92,7 +92,7 @@ The honest scaling story is:
 
 ### Phase 4: tools are protocol boundaries
 
-Calculator, Wikipedia search, and sandboxed file writing run as separate MCP servers. Agents receive only tools on their validated allowlist. The calculator evaluates a restricted arithmetic AST rather than executing code, and file writes are confined to approved extensions under `/app/data` in the shared `foundry-data` Docker volume.
+Calculator, Wikipedia search, and sandboxed file writing run as separate MCP servers. Agents receive only tools on their validated allowlist. The calculator evaluates a restricted arithmetic AST rather than executing code. File writes are confined to approved extensions under `/app/artifacts`, which is bind-mounted to the repository's gitignored `artifacts/` directory so exported reports are visible directly on the host.
 
 When a required tool has no MCP server, the graph emits a structured `ResourceRequest` with LangGraph `interrupt()`. SQLite stores the thread under `/app/data/checkpoints.sqlite` in the named volume. A later process resumes that exact thread with `Command(resume=...)`.
 
@@ -132,7 +132,7 @@ The zoo adds a durable collaboration and event ledger at `/app/data/zoo.sqlite` 
 
 Every meaningful transition is written as a sequenced event: task queueing, builder validation, Ollama crew design, agent creation, A2A dispatch, runner receipt, inference-slot waiting, agent work, MCP calls, board posts, critiques, decisions, and completion. Cursor-based SSE delivers events individually, making long serialized waits understandable rather than visually silent.
 
-The UI presents an animated architecture path, live activity timeline, clickable agent cards, tool allowlists, current status, a chat-style message board, resource controls, and final structured output. An agent detail drawer shows its mission prompt, activity history, and sent or received messages. A confirmed clear-history control removes only the Zoo's presentation history and refuses deletion during queued or running work; checkpoints, generated files, and telemetry remain intact. The dashboard remains a view over the existing architecture rather than a shortcut around it: task submission still enters through builder A2A, execution remains in the runner, and tools remain MCP-only.
+The UI presents an animated architecture path, live activity timeline, clickable agent cards, tool allowlists, current status, a chat-style message board, an artifact browser with preview/download actions, resource controls, and final structured output. An agent detail drawer shows its mission prompt, activity history, and sent or received messages. A confirmed clear-history control removes only the Zoo's presentation history and refuses deletion during queued or running work; checkpoints, generated files, and telemetry remain intact. The dashboard remains a view over the existing architecture rather than a shortcut around it: task submission still enters through builder A2A, execution remains in the runner, and tools remain MCP-only.
 
 ## Running the demonstration
 
@@ -142,7 +142,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Compose keeps runtime state in the shared `foundry-data` named volume. Rebuilding images or containers preserves it; `docker compose down -v` intentionally deletes the volume for a completely clean factory. Copy `/app/data` out of the Zoo container before using that destructive reset when examples need to be retained.
+Compose keeps runtime databases, checkpoints, and telemetry in the shared `foundry-data` named volume. Rebuilding images or containers preserves it; `docker compose down -v` intentionally deletes that runtime state. Agent-generated `.md`, `.txt`, and `.json` files are exported separately to the gitignored host `artifacts/` directory and therefore survive volume deletion until explicitly removed.
 
 Open `http://localhost:8080` for the visual Agent Zoo. For protocol-level verification, use another terminal:
 
@@ -160,7 +160,7 @@ The expected path is Agent Zoo → builder A2A → runner A2A → LangGraph plan
 - `.env` and optional host-run `data/` are ignored by Git and excluded from the Docker build context; Compose runtime state lives in a named volume.
 - Model output is Pydantic-validated before it controls graph construction.
 - Tool visibility is deny-by-default through each agent's allowlist.
-- File writes cannot escape the configured data directory.
+- File writes cannot escape the configured artifact directory, accept only `.md`, `.txt`, and `.json`, and are exposed through path-safe preview/download endpoints.
 - The calculator does not evaluate Python code.
 - Web search targets a fixed provider rather than accepting an arbitrary fetch URL.
 - Checkpoint deserialization explicitly allows only known application models.

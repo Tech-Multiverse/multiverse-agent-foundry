@@ -15,6 +15,7 @@ class FoundrySettings(BaseSettings):
     ollama_model: str = Field(min_length=1)
     max_concurrency: int = Field(default=1, ge=1)
     foundry_data_dir: Path = Path("data")
+    foundry_artifact_dir: Path = Path("artifacts")
     builder_a2a_url: AnyHttpUrl = AnyHttpUrl("http://builder:8001")
     runner_a2a_url: AnyHttpUrl = AnyHttpUrl("http://runner:8002")
     builder_a2a_public_url: AnyHttpUrl = AnyHttpUrl("http://localhost:8001")

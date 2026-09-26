@@ -79,6 +79,18 @@ def test_collaboration_round_is_bounded_and_persisted(tmp_path: Path) -> None:
 
 def test_dashboard_and_run_api(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(zoo_app, "store", ZooStore(tmp_path / "zoo.sqlite"))
+    monkeypatch.setattr(zoo_app, "artifact_dir", tmp_path / "artifacts")
+    zoo_app.artifact_dir.mkdir()
+    (zoo_app.artifact_dir / "report.md").write_text("# Verified report", encoding="utf-8")
+    zoo_app.store.add_event(
+        "artifact-thread",
+        "artifact-trace",
+        "artifact.created",
+        "Writer",
+        "Created report.md",
+        "report.md",
+        {"filename": "report.md"},
+    )
 
     async def no_op_run(thread_id, trace_id, task):
         return None
@@ -95,6 +107,13 @@ def test_dashboard_and_run_api(tmp_path: Path, monkeypatch) -> None:
     assert "Agent Zoo" in page.text
     assert "agent-drawer" in page.text
     assert "Live activity" in page.text
+    assert "Artifacts" in page.text
+    artifacts = client.get("/api/artifacts").json()
+    assert artifacts[0]["filename"] == "report.md"
+    assert artifacts[0]["created_by"] == "Writer"
+    assert client.get("/api/artifacts/report.md").json()["content"] == "# Verified report"
+    assert client.get("/artifacts/report.md").status_code == 200
+    assert client.get("/api/artifacts/../README.md").status_code == 404
     assert response.status_code == 202
     thread_id = response.json()["thread_id"]
     assert client.get(f"/api/runs/{thread_id}").json()["status"] == "queued"

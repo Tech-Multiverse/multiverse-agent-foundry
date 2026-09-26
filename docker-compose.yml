@@ -4,6 +4,7 @@ x-foundry-environment: &foundry-environment
   OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-nomic-embed-text:latest}
   MAX_CONCURRENCY: ${MAX_CONCURRENCY:-1}
   FOUNDRY_DATA_DIR: /app/data
+  FOUNDRY_ARTIFACT_DIR: /app/artifacts
 
 x-foundry-service: &foundry-service
   image: multiverse-foundry:local
@@ -15,6 +16,7 @@ x-foundry-service: &foundry-service
   environment: *foundry-environment
   volumes:
     - foundry-data:/app/data
+    - ./artifacts:/app/artifacts
 
 services:
   builder:

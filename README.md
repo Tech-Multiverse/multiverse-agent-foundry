@@ -126,9 +126,10 @@ Copy `.env.example` to `.env`. The defaults are:
 | `OLLAMA_MODEL` | Generation model | `qwen3:8b` |
 | `OLLAMA_EMBED_MODEL` | Embedding model | `nomic-embed-text:latest` |
 | `MAX_CONCURRENCY` | Maximum simultaneous agent branches | `1` |
-| `FOUNDRY_DATA_DIR` | Persistent runtime data location | `data` locally; Compose overrides to `/app/data` |
+| `FOUNDRY_DATA_DIR` | Persistent runtime database/telemetry location | `data` locally; Compose overrides to `/app/data` |
+| `FOUNDRY_ARTIFACT_DIR` | Agent-generated file location | `artifacts` locally; Compose overrides to `/app/artifacts` |
 
-The runtime consumes `OLLAMA_HOST`, `OLLAMA_MODEL`, `MAX_CONCURRENCY`, and `FOUNDRY_DATA_DIR`. The embedding model setting is reserved for a later phase.
+The runtime consumes `OLLAMA_HOST`, `OLLAMA_MODEL`, `MAX_CONCURRENCY`, `FOUNDRY_DATA_DIR`, and `FOUNDRY_ARTIFACT_DIR`. The embedding model setting is reserved for a later phase.
 
 Task files accept `task_type`, schema-agnostic `task_input`, `allowed_tools`, `required_tools`, `max_agents`, and an optional `response_schema`. Required tools must also be allowed and must be assigned to at least one generated agent. The input mapping carries the subject and context without hardcoding fields for each task type. The response definition is a JSON Schema supplied with each request, allowing later agents to produce task-specific structures without hardcoding one application schema.
 
@@ -149,6 +150,12 @@ The zoo does not expose hidden model reasoning. Agents publish bounded, explicit
 A durable sequenced event ledger streams each real action to the browser: builder validation, Ollama crew design, agent creation, A2A dispatch, queue state, agent starts, MCP calls, observations, critiques, decisions, and completion. SSE sends new rows by cursor rather than repeatedly sending full snapshots.
 
 Agent Zoo state is persisted at `/app/data/zoo.sqlite` in the shared named volume, separately from LangGraph checkpoints. Agent cards are clickable and open a detail drawer containing the role's mission prompt, tools, current status, event history, and sent/received messages. The browser also displays the active architecture boundary, live activity timeline, shared message board, resource controls, and final results while preserving the A2A and MCP service boundaries. The **Clear expedition history** button removes Zoo runs, cards, messages, and activity events after confirmation; it does not delete LangGraph checkpoints, generated artifacts, or `traces.jsonl`, and it refuses to run while an expedition is queued or running.
+
+## Generated artifacts
+
+The `file_write` MCP server writes `.md`, `.txt`, and `.json` files to `/app/artifacts`, which Compose bind-mounts to the repository's gitignored `artifacts/` directory. Files are immediately visible in Finder, editors, and the Zoo's **Artifacts** panel. The panel shows filename, size, creating agent when attribution is available, text preview, and a download action. Path traversal and unsupported extensions are rejected.
+
+Artifact files are intentionally separate from the `foundry-data` runtime volume. Clearing Zoo history or deleting the Docker volume does not delete exported artifacts; remove files from the local `artifacts/` directory only when you intentionally want to discard them.
 
 ## Local observability
 
@@ -183,7 +190,7 @@ To deliberately proceed without the missing tool, use `--resume continue_without
 
 ## Docker volume lifecycle
 
-Compose mounts one named volume, `foundry-data`, at `/app/data` in the builder, runner, Zoo, and CLI services. It contains checkpoint state, Zoo history, traces, and generated artifacts without writing runtime history into the repository.
+Compose mounts one named volume, `foundry-data`, at `/app/data` in the builder, runner, Zoo, and CLI services. It contains checkpoint state, Zoo history, and traces without writing runtime history into the repository. A separate `./artifacts:/app/artifacts` bind mount exposes only intentionally generated files on the host.
 
 ```bash
 docker compose down              # stop containers; preserve Foundry state
@@ -191,7 +198,7 @@ docker compose down -v           # destructive: delete the volume and all Foundr
 docker compose up --build        # creates an empty volume when none exists
 ```
 
-Use `docker compose down -v` only when you intentionally want a completely clean factory. The repository's ignored `data/` directory is used only by optional host-based Python runs and is not mounted by Compose. To copy runtime artifacts out before resetting, run `docker compose cp zoo:/app/data ./foundry-data-backup`.
+Use `docker compose down -v` only when you intentionally want a clean runtime database, checkpoint, and telemetry state. Host-visible files in the gitignored `artifacts/` directory survive volume deletion by design. The repository's ignored `data/` directory is used only by optional host-based Python runs and is not mounted by Compose. To back up internal runtime state before resetting, run `docker compose cp zoo:/app/data ./foundry-data-backup`.
 
 ## Docker operations
 
@@ -214,12 +221,13 @@ make docker-reset
 docker compose up
 ```
 
-`docker-reset` deliberately preserves the `foundry-data` volume, so checkpoints and generated artifacts survive an image rebuild. It also does not delete unrelated Docker images. Copy artifacts out of the volume before moving selected examples into a tracked project directory or another Git branch.
+`docker-reset` deliberately preserves the `foundry-data` volume and never removes the local `artifacts/` directory, so state and exported files survive an image rebuild. It also does not delete unrelated Docker images. Move selected artifacts into a tracked examples directory only when you intentionally want to commit them.
 
 ## Project layout
 
 ```text
 configs/example-tasks/  Versioned task examples
+artifacts/              Gitignored host-visible agent outputs
 src/builder/            Builder graph, schemas, validation, and CLI
 src/graph/              LangGraph orchestration
 src/tools/              MCP tool servers
